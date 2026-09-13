@@ -1,0 +1,355 @@
+/* Design tokens ---------------------------------------------------------
+   Subject: a listening/reading tool built on podcast transcripts. The palette
+   leans into "late-night studio" — ink background, warm dial-amber accent for
+   the model actively "on air," and a muted moss for grounded/cited content
+   (think a VU meter's safe green zone vs. its hot amber peak).
+------------------------------------------------------------------------ */
+:root {
+  --ink-950: #12141c;
+  --ink-900: #191c28;
+  --ink-800: #232636;
+  --ink-700: #2f3346;
+  --ink-600: #3d4258;
+  --paper: #eee9de;
+  --paper-dim: #b8b3a6;
+  --amber: #e3a23a;
+  --amber-dim: #a97a34;
+  --moss: #7ea888;
+  --moss-dim: #4f6b58;
+  --danger: #c96a5a;
+
+  --font-display: "Fraunces", Georgia, serif;
+  --font-body: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+
+  --radius-sm: 4px;
+  --radius-md: 8px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--ink-950);
+  color: var(--paper);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+.app-shell {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  height: 100vh;
+}
+
+/* Header ---------------------------------------------------------------- */
+.app-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 18px 28px;
+  border-bottom: 1px solid var(--ink-700);
+}
+
+.app-title {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 22px;
+  letter-spacing: -0.01em;
+  color: var(--paper);
+  margin: 0;
+}
+
+.app-title em {
+  font-style: italic;
+  color: var(--amber);
+}
+
+.provider-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--paper-dim);
+  border: 1px solid var(--ink-600);
+  border-radius: 999px;
+  padding: 5px 12px;
+}
+
+.provider-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--moss);
+}
+.provider-dot.offline {
+  background: var(--danger);
+}
+
+/* Main layout: chat | divider | artifact viewer -------------------------- */
+.main-grid {
+  display: grid;
+  grid-template-columns: minmax(360px, 1fr) 1px minmax(0, 1fr);
+  min-height: 0;
+}
+
+.main-grid.no-artifact {
+  grid-template-columns: 1fr;
+}
+
+.divider {
+  background: var(--ink-700);
+}
+
+/* Chat pane --------------------------------------------------------------- */
+.chat-pane {
+  display: grid;
+  grid-template-rows: 1fr auto;
+  min-height: 0;
+}
+
+.message-list {
+  overflow-y: auto;
+  padding: 24px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.message-row {
+  max-width: 640px;
+}
+
+.message-row.user {
+  align-self: flex-end;
+  margin-left: auto;
+}
+
+.message-role {
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--paper-dim);
+  margin-bottom: 6px;
+}
+
+.message-bubble {
+  padding: 12px 16px;
+  border-radius: var(--radius-md);
+  white-space: pre-wrap;
+}
+
+.message-row.user .message-bubble {
+  background: var(--ink-800);
+  border: 1px solid var(--ink-600);
+}
+
+.message-row.assistant .message-bubble {
+  background: transparent;
+  border-left: 2px solid var(--amber-dim);
+  border-radius: 0;
+  padding-left: 16px;
+}
+
+.message-row.assistant .message-bubble p:first-child { margin-top: 0; }
+.message-row.assistant .message-bubble p:last-child { margin-bottom: 0; }
+
+.citations {
+  margin-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.citation-chip {
+  font-size: 11.5px;
+  color: var(--moss);
+  border: 1px solid var(--moss-dim);
+  border-radius: 999px;
+  padding: 3px 10px;
+}
+
+.not-grounded-note {
+  margin-top: 10px;
+  font-size: 12.5px;
+  color: var(--amber);
+}
+
+.artifact-open-link {
+  margin-top: 10px;
+  display: inline-block;
+  font-size: 13px;
+  color: var(--amber);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* Composer ---------------------------------------------------------------- */
+.composer {
+  border-top: 1px solid var(--ink-700);
+  padding: 16px 28px 20px;
+}
+
+.intent-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.intent-pill {
+  font-size: 12.5px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--ink-600);
+  background: transparent;
+  color: var(--paper-dim);
+  cursor: pointer;
+}
+
+.intent-pill.active {
+  border-color: var(--amber);
+  color: var(--amber);
+}
+
+.composer-input-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
+}
+
+.composer-textarea {
+  flex: 1;
+  resize: none;
+  min-height: 46px;
+  max-height: 160px;
+  background: var(--ink-800);
+  border: 1px solid var(--ink-600);
+  border-radius: var(--radius-md);
+  color: var(--paper);
+  padding: 12px 14px;
+  font-family: var(--font-body);
+  font-size: 14.5px;
+}
+
+.composer-textarea:focus {
+  outline: 2px solid var(--amber-dim);
+  outline-offset: 1px;
+}
+
+.send-button {
+  background: var(--amber);
+  color: var(--ink-950);
+  border: none;
+  border-radius: var(--radius-md);
+  padding: 12px 20px;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.send-button:disabled {
+  background: var(--ink-600);
+  color: var(--paper-dim);
+  cursor: not-allowed;
+}
+
+.empty-state {
+  margin: auto;
+  text-align: center;
+  color: var(--paper-dim);
+  max-width: 420px;
+  padding: 24px;
+}
+
+.empty-state h2 {
+  font-family: var(--font-display);
+  color: var(--paper);
+  font-weight: 600;
+  font-size: 20px;
+}
+
+.error-banner {
+  background: rgba(201, 106, 90, 0.12);
+  border: 1px solid var(--danger);
+  color: var(--danger);
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  margin: 0 28px 12px;
+}
+
+/* Artifact viewer ---------------------------------------------------------- */
+.artifact-pane {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  min-height: 0;
+  background: var(--ink-900);
+}
+
+.artifact-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 22px;
+  border-bottom: 1px solid var(--ink-700);
+}
+
+.artifact-header h3 {
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0;
+  color: var(--paper);
+}
+
+.artifact-close {
+  background: none;
+  border: none;
+  color: var(--paper-dim);
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.artifact-body {
+  overflow-y: auto;
+  padding: 24px 28px;
+}
+
+.artifact-body.markdown h1,
+.artifact-body.markdown h2,
+.artifact-body.markdown h3 {
+  font-family: var(--font-display);
+  color: var(--paper);
+}
+
+.artifact-body.markdown {
+  color: var(--paper);
+  max-width: 680px;
+}
+
+.artifact-body.markdown code {
+  background: var(--ink-800);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+
+.artifact-iframe {
+  width: 100%;
+  height: 100%;
+  border: none;
+  background: white;
+  border-radius: var(--radius-sm);
+}
+
+.sandbox-note {
+  font-size: 11.5px;
+  color: var(--paper-dim);
+  padding: 8px 22px 0;
+}
