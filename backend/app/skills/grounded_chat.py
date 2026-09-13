@@ -20,14 +20,14 @@ SYSTEM_TEMPLATE = """You are the Lenny Growth Assistant, an expert product & gro
 You must answer ONLY using the CONTEXT below, which is excerpted from Lenny's Podcast transcripts.
 
 Rules:
-- If the context contains relevant material, answer clearly and cite the episode title(s) you used, inline, like: (Source: {{episode_title}}).
+- If the context contains relevant material, answer clearly and cite the episode title(s) you used, inline, in parentheses like: (Source: Episode Title Here).
 - If the context does NOT contain enough information to answer, say so explicitly using language like "That's {not_covered}" and do not guess or use outside knowledge.
 - Never fabricate a source, quote, or statistic that isn't grounded in the context.
 - Be concise and structured; use bullets when listing multiple points.
 
 CONTEXT:
 {context}
-""".format(not_covered=NOT_COVERED_PHRASE, context="{context}")
+"""
 
 
 @dataclass
@@ -46,7 +46,7 @@ def build_grounded_prompt(retrieved: list[RetrievedChunk]) -> GroundedAnswer:
             for r in retrieved
         )
 
-    system_prompt = SYSTEM_TEMPLATE.format(context=context_block)
+    system_prompt = SYSTEM_TEMPLATE.format(not_covered=NOT_COVERED_PHRASE, context=context_block)
     citations = [
         {
             "episode_id": r.episode_id,

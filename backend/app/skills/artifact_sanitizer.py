@@ -41,10 +41,19 @@ _CSS_SANITIZER = CSSSanitizer()
 
 _DATA_URL_IMG_RE = re.compile(r"^data:image/(png|jpeg|jpg|gif|webp);base64,", re.IGNORECASE)
 
+# Strip <script>...</script> and <style>...</style> blocks INCLUDING their
+# content before bleach runs. bleach's tag-stripping alone removes the tag
+# but leaves the raw text content behind as inert page text (safe, since it
+# can't execute without the tag, but confusing/messy to show a user) — this
+# pre-pass removes the content too for a cleaner result.
+_SCRIPT_STYLE_RE = re.compile(r"<(script|style)\b[^>]*>.*?</\1\s*>", re.IGNORECASE | re.DOTALL)
+
 
 def sanitize_html(raw_html: str, max_bytes: int) -> str:
     if len(raw_html.encode("utf-8")) > max_bytes:
         raw_html = raw_html.encode("utf-8")[:max_bytes].decode("utf-8", errors="ignore")
+
+    raw_html = _SCRIPT_STYLE_RE.sub("", raw_html)
 
     cleaned = bleach.clean(
         raw_html,
