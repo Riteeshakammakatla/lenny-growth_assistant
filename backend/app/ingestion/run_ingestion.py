@@ -2,10 +2,11 @@
 CLI entry point: `python -m app.ingestion.run_ingestion`
 
 Loads transcripts from TRANSCRIPTS_DIR, chunks them, embeds each chunk, and
-upserts into the transcript_chunks table. Re-running is safe: existing
-chunks for an episode are deleted and replaced (simplest correct behavior
-for a refreshable knowledge base — see architecture.md for incremental
-refresh discussion).
+populates the transcript_chunks table. Re-running is safe: ALL existing
+chunks are deleted first (a single DELETE), then the full dataset is
+re-inserted. This guarantees no stale or duplicate rows regardless of the
+state left by any previous run — including runs where episode_ids were
+incorrect (e.g. all set to "transcript").
 """
 import asyncio
 import logging
@@ -35,10 +36,16 @@ async def ingest() -> None:
         return
 
     async with SessionLocal() as db:
+        # Wipe ALL existing chunks in one shot before re-ingesting.
+        # A per-episode delete is insufficient when episode_ids were previously
+        # wrong (e.g. all "transcript"), so we do a clean full reset instead.
+        result = await db.execute(delete(TranscriptChunk))
+        deleted = result.rowcount
+        await db.commit()
+        logger.info("Cleared %d stale chunk(s) from transcript_chunks.", deleted)
+
         total_chunks = 0
         for t in transcripts:
-            # Replace any existing chunks for this episode (idempotent re-ingestion).
-            await db.execute(delete(TranscriptChunk).where(TranscriptChunk.episode_id == t.episode_id))
 
             chunks = chunk_text(
                 t.text,

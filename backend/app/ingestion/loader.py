@@ -1,13 +1,15 @@
 """
 Loads transcript files from disk into (episode_id, episode_title, source_path, text) records.
 
-Expects `transcripts_dir` (see settings) to contain one file per episode —
-`.md` or `.txt` — such as a checkout of
-https://github.com/ChatPRD/lennys-podcast-transcripts. We deliberately read
-from a local directory rather than shelling out to `git` at ingestion time,
-so ingestion works offline and the evaluator controls exactly which
-transcripts are present (see scripts/fetch_transcripts.sh for the one-time
-clone step).
+Only loads actual episode transcripts located at:
+    <transcripts_dir>/episodes/<episode-slug>/transcript.md
+
+This deliberately excludes:
+- CLAUDE.md, README.md (root documentation)
+- index/*.md (topic index files)
+- Any other non-episode markdown files
+
+See scripts/fetch_transcripts.sh for the one-time clone step.
 """
 import re
 from dataclasses import dataclass
@@ -22,15 +24,47 @@ class RawTranscript:
     text: str
 
 
-def _derive_title(filename: str, first_line: str) -> str:
-    # Prefer a markdown H1 if present, else fall back to a cleaned filename.
-    h1_match = re.match(r"^#\s+(.*)", first_line.strip())
+_FRONTMATTER_TITLE_RE = re.compile(r"^title:\s*['\"]?(.*?)['\"]?\s*$", re.MULTILINE)
+_H1_RE = re.compile(r"^#\s+(.*)", re.MULTILINE)
+
+
+def _extract_title(text: str, episode_slug: str) -> str:
+    """Extract a meaningful title using three strategies in priority order:
+
+    1. YAML frontmatter ``title:`` field (transcripts have ``---`` frontmatter).
+    2. First markdown H1 heading found anywhere in the text.
+    3. Humanise the episode directory slug as a final fallback.
+    """
+    # 1. YAML frontmatter: look for `title:` between the opening `---` fences.
+    if text.startswith("---"):
+        end = text.find("\n---", 3)
+        if end != -1:
+            frontmatter = text[3:end]
+            # Handle multi-line YAML scalars: grab only the first continuation
+            # that starts with 'title:' and collapse the inline value.
+            fm_match = _FRONTMATTER_TITLE_RE.search(frontmatter)
+            if fm_match:
+                title = fm_match.group(1).strip().strip("\"'")
+                if title:
+                    return title
+
+    # 2. First H1 heading anywhere in the document.
+    h1_match = _H1_RE.search(text)
     if h1_match:
         return h1_match.group(1).strip()
-    return filename.rsplit(".", 1)[0].replace("-", " ").replace("_", " ").strip()
+
+    # 3. Humanise the directory slug: "ami-vora" → "Ami Vora".
+    return episode_slug.replace("-", " ").replace("_", " ").title()
 
 
 def load_transcripts(transcripts_dir: str) -> list[RawTranscript]:
+    """Load only actual podcast episode transcripts.
+
+    Targets the pattern:
+        <transcripts_dir>/episodes/<slug>/transcript.md
+
+    All other files (CLAUDE.md, README.md, index/*.md, etc.) are ignored.
+    """
     root = Path(transcripts_dir)
     if not root.exists():
         raise FileNotFoundError(
@@ -39,15 +73,30 @@ def load_transcripts(transcripts_dir: str) -> list[RawTranscript]:
             f"you've populated manually."
         )
 
-    files = sorted([*root.rglob("*.md"), *root.rglob("*.txt")])
+    episodes_dir = root / "episodes"
+    if not episodes_dir.exists():
+        raise FileNotFoundError(
+            f"Expected an 'episodes' subdirectory at '{episodes_dir}'. "
+            f"Make sure TRANSCRIPTS_DIR points to the root of the transcript repo "
+            f"(which should contain episodes/, index/, etc.)."
+        )
+
+    # Only match the canonical transcript file inside each episode directory.
+    # This deliberately excludes README.md, CLAUDE.md, index/*.md, scripts/*, etc.
+    transcript_files = sorted(episodes_dir.glob("*/transcript.md"))
+
     transcripts: list[RawTranscript] = []
-    for path in files:
+    for path in transcript_files:
         text = path.read_text(encoding="utf-8", errors="ignore").strip()
         if not text:
             continue
-        first_line = text.splitlines()[0] if text.splitlines() else ""
-        title = _derive_title(path.name, first_line)
-        episode_id = path.stem
+
+        # episode_id = the episode's directory name (e.g. "ami-vora"), NOT path.stem
+        # which would always be "transcript" for every file.
+        episode_id = path.parent.name
+
+        title = _extract_title(text, episode_id)
+
         transcripts.append(
             RawTranscript(
                 episode_id=episode_id,
