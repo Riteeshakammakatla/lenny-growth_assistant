@@ -10,16 +10,17 @@ Responsibilities:
 - Persist the resulting message, citations, and any artifact.
 """
 import logging
+import re
 import time
 
-from sqlalchemy import select
+from sqlalchemy import distinct, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.providers.base import LLMMessage, LLMProviderError
 from app.agent.providers.factory import get_provider
 from app.agent.retrieval import retrieve
 from app.config.settings import get_settings
-from app.db.models import ChatMessage, ChatSession
+from app.db.models import ChatMessage, ChatSession, TranscriptChunk
 from app.skills.artifact_sanitizer import sanitize_html
 from app.skills.grounded_chat import build_grounded_prompt, build_messages
 from app.skills.ship30_essay import build_essay_prompt
@@ -30,6 +31,101 @@ logger = logging.getLogger("orchestrator")
 # Defined as a module-level constant so it is consistent across all intents
 # and easy to change without hunting through function bodies.
 _NO_CONTEXT_RESPONSE = "That's not covered in the transcripts I have."
+
+# ---------------------------------------------------------------------------
+# Knowledge-base metadata routing
+#
+# Detects questions about the knowledge base itself (listing/counting episodes)
+# and answers them via a direct DB query instead of semantic retrieval + LLM.
+# This prevents the LLM from confusing the top-k retrieval window with the full
+# knowledge base (e.g., reporting only 5 episodes when 303 are stored).
+# ---------------------------------------------------------------------------
+_KB_META_RE = re.compile(
+    r"(how many|what|which|tell me|list|show|give me).{0,40}"
+    r"(transcript|episode|podcast|topic|available|have|know about|knowledge base|you have)",
+    re.IGNORECASE,
+)
+
+
+def _is_kb_metadata_query(message: str) -> bool:
+    """Return True when the message is asking about the knowledge base itself
+    (count, list, or catalogue of transcripts/episodes) rather than a content
+    question that should go through normal RAG retrieval."""
+    lowered = message.lower().strip()
+    # Quick keyword filter: must contain at least one listing/meta indicator.
+    meta_keywords = (
+        "how many transcripts", "how many episodes", "how many podcast",
+        "what transcripts", "what episodes", "which transcripts", "which episodes",
+        "list all", "list the", "show all", "show me all", "tell me all",
+        "all transcripts", "all episodes", "all the episodes", "all the transcripts",
+        "available transcripts", "available episodes",
+        "what do you have", "what topics do you", "what have you",
+        "your knowledge base", "your transcripts", "your episodes",
+        "what's in your", "what is in your",
+    )
+    return any(kw in lowered for kw in meta_keywords)
+
+
+async def _handle_kb_metadata_query(
+    db: AsyncSession, session_id: str, user_message: str
+) -> dict:
+    """Query the DB directly for distinct episodes and return a pre-formatted
+    response without calling the LLM."""
+    result = await db.execute(
+        select(
+            TranscriptChunk.episode_id,
+            TranscriptChunk.episode_title,
+        )
+        .distinct(TranscriptChunk.episode_id)
+        .order_by(TranscriptChunk.episode_title)
+    )
+    episodes = result.all()  # list of (episode_id, episode_title) tuples
+    count = len(episodes)
+
+    lowered = user_message.lower()
+    wants_list = any(kw in lowered for kw in (
+        "list", "show", "tell me all", "all transcripts", "all episodes",
+        "what transcripts", "what episodes", "which transcripts", "which episodes",
+    ))
+
+    if wants_list:
+        titles = "\n".join(f"{i+1}. {ep_title}" for i, (_, ep_title) in enumerate(episodes))
+        content = (
+            f"I have **{count} podcast episode transcripts** from Lenny's Podcast in my knowledge base.\n\n"
+            f"Here is the complete list:\n\n{titles}"
+        )
+    else:
+        # Count-only or general metadata question
+        content = (
+            f"I have **{count} podcast episode transcripts** from Lenny's Podcast in my knowledge base. "
+            f"You can ask me about any specific topic — product strategy, growth, onboarding, pricing, "
+            f"team building, and much more — and I'll find the most relevant excerpts for you."
+        )
+
+    user_msg = ChatMessage(session_id=session_id, role="user", content=user_message)
+    assistant_msg = ChatMessage(
+        session_id=session_id,
+        role="assistant",
+        content=content,
+        citations=None,
+        artifact=None,
+        llm_provider="none",
+        latency_ms=0,
+    )
+    db.add(user_msg)
+    db.add(assistant_msg)
+    await db.commit()
+    await db.refresh(assistant_msg)
+    return {
+        "message_id": assistant_msg.id,
+        "session_id": session_id,
+        "content": content,
+        "citations": [],
+        "artifact": None,
+        "llm_provider": "none",
+        "latency_ms": 0,
+        "grounded": True,
+    }
 
 
 class SessionNotFoundError(Exception):
@@ -61,6 +157,14 @@ async def handle_chat_turn(
         raise SessionNotFoundError(session_id)
 
     history = await _load_history(db, session_id)
+
+    # 0. Knowledge-base metadata gate.
+    #    Questions about the KB itself (listing / counting episodes) must be
+    #    answered from the real DB count — NOT from the top-k retrieval window,
+    #    which would make the LLM think only a handful of episodes exist.
+    if _is_kb_metadata_query(user_message):
+        logger.info("KB metadata query detected: %r — answering from DB directly.", user_message[:80])
+        return await _handle_kb_metadata_query(db, session_id, user_message)
 
     # 1. Retrieval — grounds both plain chat and essay generation.
     retrieved = await retrieve(db, user_message)
