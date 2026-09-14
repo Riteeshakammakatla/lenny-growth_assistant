@@ -34,7 +34,8 @@ services:
       # - Fewer retrieved chunks = smaller prompt = faster response.
       # - Longer timeout than the default 180s as a safety net.
       LLM_MAX_TOKENS: "400"
-      RETRIEVAL_TOP_K: "3"
+      RETRIEVAL_TOP_K: "6"
+      RETRIEVAL_MIN_SCORE: "0.20"
       OLLAMA_TIMEOUT_SECONDS: "300"
     extra_hosts:
       - "host.docker.internal:host-gateway"

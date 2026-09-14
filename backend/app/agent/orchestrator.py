@@ -32,6 +32,43 @@ logger = logging.getLogger("orchestrator")
 # and easy to change without hunting through function bodies.
 _NO_CONTEXT_RESPONSE = "That's not covered in the transcripts I have."
 
+# Signals that the LLM acknowledged no relevant context exists.
+_NOT_COVERED_MARKERS = (
+    "not covered in the transcripts",
+    "not in the transcripts",
+    "no relevant transcript",
+    "no relevant information",
+    "i don't have",
+    "i do not have",
+)
+# Signals that the LLM then leaked outside knowledge after the acknowledgement.
+_LEAK_MARKERS = (
+    "but i can", "however, i can", "however, here", "here are some",
+    "here are a few", "general insights", "general information",
+    "general advice", "best practices", "industry knowledge",
+    "from my knowledge", "based on general", "typically,", "in general,",
+)
+
+
+def _clamp_grounding(text: str) -> str:
+    """If the LLM started with a 'not covered' acknowledgement but then appended
+    outside / general knowledge (grounding violation), replace the entire response
+    with the canonical fallback string.
+
+    This is a deterministic post-processing safety net for small models that
+    sometimes ignore the system-prompt STOP instruction.
+    """
+    lowered = text.lower()
+    starts_with_not_covered = any(m in lowered[:120] for m in _NOT_COVERED_MARKERS)
+    if not starts_with_not_covered:
+        return text  # normal response — nothing to clamp
+
+    has_leak = any(m in lowered for m in _LEAK_MARKERS)
+    if has_leak:
+        return _NO_CONTEXT_RESPONSE  # clamp: strip the leaked content
+    return text  # clean "not covered" response — keep as-is
+
+
 # ---------------------------------------------------------------------------
 # Knowledge-base metadata routing
 #
@@ -246,6 +283,14 @@ async def handle_chat_turn(
             temperature=settings.llm_temperature,
         )
         text = response.text
+        # ------------------------------------------------------------ #
+        # Grounding clamp: small models sometimes start with the        #
+        # correct "not covered" sentence but then append outside        #
+        # knowledge ("but I can provide general insights...").          #
+        # If that pattern is detected, strip everything after the       #
+        # canonical fallback sentence.                                  #
+        # ------------------------------------------------------------ #
+        text = _clamp_grounding(text)
         latency_ms = response.latency_ms
         actual_provider = response.provider
     except LLMProviderError as exc:
