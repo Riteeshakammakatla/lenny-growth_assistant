@@ -9,7 +9,7 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: lenny_assistant
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - db_data:/var/lib/postgresql/data
     healthcheck:
@@ -27,8 +27,15 @@ services:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/lenny_assistant
       # On Linux, host.docker.internal needs the extra_hosts entry below.
       # On Docker Desktop (Mac/Windows) it works out of the box.
-      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
       TRANSCRIPTS_DIR: /app/data/transcripts
+      # Performance tuning for llama3.2:3b on CPU:
+      # - Keep output short so generation stays well inside the timeout.
+      # - Fewer retrieved chunks = smaller prompt = faster response.
+      # - Longer timeout than the default 180s as a safety net.
+      LLM_MAX_TOKENS: "400"
+      RETRIEVAL_TOP_K: "3"
+      OLLAMA_TIMEOUT_SECONDS: "300"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
