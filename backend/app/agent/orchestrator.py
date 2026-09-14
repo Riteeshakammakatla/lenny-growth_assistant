@@ -26,12 +26,17 @@ from app.skills.ship30_essay import build_essay_prompt
 
 logger = logging.getLogger("orchestrator")
 
+# Canonical fallback used whenever no relevant transcript chunks are found.
+# Defined as a module-level constant so it is consistent across all intents
+# and easy to change without hunting through function bodies.
+_NO_CONTEXT_RESPONSE = "That's not covered in the transcripts I have."
+
 
 class SessionNotFoundError(Exception):
     pass
 
 
-async def _load_history(db: AsyncSession, session_id: str, limit: int = 12) -> list[LLMMessage]:
+async def _load_history(db: AsyncSession, session_id: str, limit: int = 6) -> list[LLMMessage]:
     result = await db.execute(
         select(ChatMessage)
         .where(ChatMessage.session_id == session_id)
@@ -59,6 +64,50 @@ async def handle_chat_turn(
 
     # 1. Retrieval — grounds both plain chat and essay generation.
     retrieved = await retrieve(db, user_message)
+
+    # ------------------------------------------------------------------ #
+    # Grounding gate (programmatic, not prompt-based)                      #
+    #                                                                      #
+    # retrieve() already applies retrieval_min_score, so an empty list    #
+    # means EITHER no chunks exist at all OR every candidate scored below  #
+    # the relevance threshold. In both cases we must NOT call the LLM —   #
+    # doing so allows the model to answer from parametric (outside)        #
+    # knowledge, which violates the assignment's grounding requirement.    #
+    #                                                                      #
+    # We persist the fallback as a proper message pair so the session      #
+    # history stays consistent, and return immediately.                    #
+    # ------------------------------------------------------------------ #
+    if not retrieved:
+        logger.info(
+            "No relevant transcript chunks for query %r (intent=%s). "
+            "Returning grounding fallback without calling LLM.",
+            user_message[:80],
+            intent,
+        )
+        user_msg = ChatMessage(session_id=session_id, role="user", content=user_message)
+        assistant_msg = ChatMessage(
+            session_id=session_id,
+            role="assistant",
+            content=_NO_CONTEXT_RESPONSE,
+            citations=None,
+            artifact=None,
+            llm_provider="none",
+            latency_ms=0,
+        )
+        db.add(user_msg)
+        db.add(assistant_msg)
+        await db.commit()
+        await db.refresh(assistant_msg)
+        return {
+            "message_id": assistant_msg.id,
+            "session_id": session_id,
+            "content": _NO_CONTEXT_RESPONSE,
+            "citations": [],
+            "artifact": None,
+            "llm_provider": "none",
+            "latency_ms": 0,
+            "grounded": False,
+        }
 
     # 2. Route by intent.
     citations: list[dict] = []
