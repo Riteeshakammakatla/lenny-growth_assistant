@@ -70,6 +70,60 @@ def _clamp_grounding(text: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Contextual Retrieval Query Construction for Follow-up Questions
+# ---------------------------------------------------------------------------
+_FOLLOWUP_RE = re.compile(
+    r"\b("
+    r"that|those|this|these|it|its|he|him|his|she|her|they|them|their|"
+    r"the former|the latter|first|second|third|previous|above|"
+    r"tell me more|give me|summarize|summary|actionable|lessons|takeaways|"
+    r"apply|elaborate|expand|more details|what about|what else|how so|why so|"
+    r"why did|how did|what do you mean"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def _is_followup_query(message: str) -> bool:
+    """Return True if the user message is a follow-up query relying on recent conversation context."""
+    if _FOLLOWUP_RE.search(message):
+        return True
+    # Short queries (<= 4 words) often rely implicitly on previous context
+    words = message.strip().split()
+    if len(words) <= 4:
+        return True
+    return False
+
+
+def _build_retrieval_query(user_message: str, history: list[LLMMessage]) -> str:
+    """Construct a contextual retrieval query for follow-up questions using recent history."""
+    if not history or not _is_followup_query(user_message):
+        return user_message
+
+    # Extract relevant recent turns from history (last 1-2 turns)
+    recent_msgs = history[-3:]
+    context_snippets: list[str] = []
+
+    for msg in recent_msgs:
+        if msg.role == "user":
+            context_snippets.append(msg.content)
+        elif msg.role == "assistant" and msg.content and msg.content != _NO_CONTEXT_RESPONSE:
+            # Include a brief snippet from the assistant's previous response for entity context
+            context_snippets.append(msg.content[:200])
+
+    if not context_snippets:
+        return user_message
+
+    contextual_query = " ".join(context_snippets + [user_message]).strip()
+    logger.info(
+        "Follow-up query detected (%r). Using contextual retrieval query: %r",
+        user_message[:60],
+        contextual_query[:120],
+    )
+    return contextual_query
+
+
+# ---------------------------------------------------------------------------
 # Knowledge-base metadata routing
 #
 # Detects questions about the knowledge base itself (listing/counting episodes)
@@ -204,7 +258,8 @@ async def handle_chat_turn(
         return await _handle_kb_metadata_query(db, session_id, user_message)
 
     # 1. Retrieval — grounds both plain chat and essay generation.
-    retrieved = await retrieve(db, user_message)
+    retrieval_query = _build_retrieval_query(user_message, history)
+    retrieved = await retrieve(db, retrieval_query)
 
     # ------------------------------------------------------------------ #
     # Grounding gate (programmatic, not prompt-based)                      #
