@@ -24,23 +24,50 @@ import numpy as np
 
 from app.config.settings import get_settings
 
+from collections import Counter
+
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
 _VECTOR_DIM = 384
 
+_STOP_WORDS = {
+    "a", "about", "above", "after", "again", "against", "all", "am", "an", "and", "any", "are", "aren", "as",
+    "at", "be", "because", "been", "before", "being", "below", "between", "both", "but", "by", "can", "cannot",
+    "could", "did", "do", "does", "doing", "down", "during", "each", "few", "for", "from", "further", "had",
+    "has", "have", "having", "he", "her", "here", "hers", "herself", "him", "himself", "his", "how", "i", "if",
+    "in", "into", "is", "it", "its", "itself", "just", "me", "more", "most", "my", "myself", "no", "nor", "not",
+    "of", "off", "on", "once", "only", "or", "other", "our", "ours", "ourselves", "out", "over", "own", "same",
+    "she", "should", "so", "some", "such", "than", "that", "the", "their", "theirs", "them", "themselves",
+    "then", "there", "these", "they", "this", "those", "through", "to", "too", "under", "until", "up", "very",
+    "was", "we", "were", "what", "when", "where", "which", "while", "who", "whom", "why", "with", "would",
+    "you", "your", "yours", "yourself", "yourselves", "re", "s", "ve", "d", "ll", "m", "don", "t", "will",
+    "just", "like", "know", "think", "yeah", "going", "get", "got", "thing", "things", "lot", "kind", "way",
+    "make", "much", "see", "well", "also", "really", "want", "us", "take", "say", "said"
+}
+
 
 def _hash_embed(text: str, dim: int = _VECTOR_DIM) -> list[float]:
-    """Deterministic, dependency-free embedding: hash each token into a bucket
-    of a fixed-size vector, weighted by term frequency, then L2-normalize.
-    This is intentionally simple — see module docstring for the trade-off."""
+    """Deterministic, dependency-free embedding: hash content tokens into buckets
+    of a fixed-size vector, weighted by sublinear term frequency, then L2-normalize.
+    Filters out high-frequency stop words to prevent query/document vector dilution."""
     vec = np.zeros(dim, dtype=np.float32)
-    tokens = _TOKEN_RE.findall(text.lower())
-    if not tokens:
+    raw_tokens = _TOKEN_RE.findall(text.lower())
+    if not raw_tokens:
         return vec.tolist()
-    for tok in tokens:
+    
+    # Filter stop words; fall back to raw tokens if all tokens were stop words
+    tokens = [t for t in raw_tokens if t not in _STOP_WORDS]
+    if not tokens:
+        tokens = raw_tokens
+
+    counts = Counter(tokens)
+    for tok, count in counts.items():
         h = int(hashlib.sha256(tok.encode("utf-8")).hexdigest(), 16)
         idx = h % dim
         sign = 1.0 if (h // dim) % 2 == 0 else -1.0
-        vec[idx] += sign
+        # Sublinear term frequency scaling: 1 + log(count)
+        weight = 1.0 + float(np.log(count))
+        vec[idx] += sign * weight
+
     norm = np.linalg.norm(vec)
     if norm > 0:
         vec = vec / norm
