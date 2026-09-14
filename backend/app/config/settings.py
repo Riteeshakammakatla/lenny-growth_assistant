@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     ollama_timeout_seconds: int = 120
 
     # Shared LLM behavior
-    llm_max_tokens: int = 1500
+    llm_max_tokens: int = 500
     llm_temperature: float = 0.3
     llm_request_timeout_seconds: int = 60
 
@@ -44,7 +44,7 @@ class Settings(BaseSettings):
     chunk_size_tokens: int = 500
     chunk_overlap_tokens: int = 75
     retrieval_top_k: int = 6
-    retrieval_min_score: float = 0.15  # below this, treat as "no relevant context"
+    retrieval_min_score: float = 0.20  # below this, treat as "no relevant context"
 
     # --- Artifact rendering / security ---
     artifact_max_html_bytes: int = 200_000
