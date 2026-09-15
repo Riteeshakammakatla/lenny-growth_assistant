@@ -19,14 +19,19 @@ Read [`PRD.md`](./PRD.md) for the product brief & discovery scope, [`docs/archit
 ollama pull llama3.2:3b
 ollama serve   # start host Ollama service if not already running
 
-# 2. Configure environment
+# 2. Fetch transcript dataset into ./data/transcripts
+./scripts/fetch_transcripts.sh
+# Note: On Windows PowerShell if bash is unavailable, run:
+# git clone --depth 1 https://github.com/ChatPRD/lennys-podcast-transcripts.git data/transcripts
+
+# 3. Configure environment
 cp .env.example .env
 # Default setting points LLM_PROVIDER=ollama — no further edits required for local demo
 
-# 3. Start PostgreSQL database, FastAPI backend, and React frontend
+# 4. Start PostgreSQL database, FastAPI backend, and React frontend
 docker compose up -d --build
 
-# 4. Ingest podcast transcripts into PostgreSQL knowledge base (303 episodes / 11,012 chunks)
+# 5. Ingest podcast transcripts into PostgreSQL knowledge base (303 episodes / 11,012 chunks)
 docker compose exec backend python -m app.ingestion.run_ingestion
 ```
 
