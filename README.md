@@ -16,7 +16,7 @@ Read [`PRD.md`](./PRD.md) for the product brief & discovery scope, [`docs/archit
 
 ```bash
 # 1. Pull the local model (one-time setup)
-ollama pull llama3.1:8b
+ollama pull llama3.2:3b
 ollama serve   # start host Ollama service if not already running
 
 # 2. Configure environment
@@ -58,9 +58,9 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
 # Start a local Postgres container or instance:
-docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=lenny_assistant postgres:16-alpine
+docker run -d -p 5433:5432 -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=lenny_assistant postgres:16-alpine
 
-cp ../.env.example .env   # ensure DATABASE_URL points to localhost:5432
+cp ../.env.example .env   # ensure DATABASE_URL points to localhost:5433
 uvicorn app.main:app --reload
 ```
 
@@ -107,6 +107,7 @@ The **33 automated unit and integration tests** cover:
 
 See [`.env.example`](./.env.example) for inline documentation. Primary controls:
 - `LLM_PROVIDER`: `ollama` (local) or `anthropic` (cloud).
+- `OLLAMA_MODEL`: Default `llama3.2:3b` for local execution.
 - `OLLAMA_BASE_URL`: Defaults to `http://host.docker.internal:11434` for Docker-to-host connectivity.
 - `RETRIEVAL_TOP_K`: Default `6` candidate chunks per retrieval turn.
 - `RETRIEVAL_MIN_SCORE`: Relevance threshold `0.20` below which queries return the canonical non-grounded fallback.
@@ -117,7 +118,7 @@ See [`.env.example`](./.env.example) for inline documentation. Primary controls:
 
 | Symptom | Likely Cause | Resolution |
 |---|---|---|
-| `/health` shows `llm_provider_healthy: false` with Ollama | `ollama serve` isn't running on host, or model isn't pulled | Run `ollama serve` and `ollama pull llama3.1:8b` |
+| `/health` shows `llm_provider_healthy: false` with Ollama | `ollama serve` isn't running on host, or model isn't pulled | Run `ollama serve` and `ollama pull llama3.2:3b` |
 | Backend can't reach Ollama from inside Docker on Linux | `host.docker.internal` DNS not resolving | Confirm `extra_hosts: host-gateway` is present in `docker-compose.yml` (included by default) |
 | `/health` shows `knowledge_base_chunks: 0` | Transcript ingestion hasn't run yet | Run `docker compose exec backend python -m app.ingestion.run_ingestion` |
 | "Tell me all transcripts" lists only a few episodes | Direct semantic search window limitation | Resolved by KB Metadata Router in `orchestrator.py` which queries distinct episodes directly from DB |

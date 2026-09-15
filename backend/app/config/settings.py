@@ -30,11 +30,11 @@ class Settings(BaseSettings):
 
     # Ollama (local) — mandatory path for the submitted demo
     ollama_base_url: str = "http://localhost:11434"
-    ollama_model: str = "llama3.1:8b"
-    ollama_timeout_seconds: int = 120
+    ollama_model: str = "llama3.2:3b"
+    ollama_timeout_seconds: int = 300
 
     # Shared LLM behavior
-    llm_max_tokens: int = 500
+    llm_max_tokens: int = 400
     llm_temperature: float = 0.3
     llm_request_timeout_seconds: int = 60
 
