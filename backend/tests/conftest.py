@@ -5,8 +5,9 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 
+from app.agent.embeddings import embed_text
 from app.agent.providers.base import LLMMessage, LLMProvider, LLMResponse
-from app.db.models import Base
+from app.db.models import Base, TranscriptChunk
 from app.db.session import get_db
 from app.main import app
 
@@ -35,6 +36,33 @@ async def test_engine():
     engine = create_async_engine("sqlite+aiosqlite:///:memory:", connect_args={"check_same_thread": False})
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+    # Seed mock transcript chunks into the test database
+    async_session = async_sessionmaker(engine, expire_on_commit=False)
+    async with async_session() as session:
+        c1 = TranscriptChunk(
+            id="c1",
+            episode_id="ep1",
+            episode_title="Growth Loops & Metrics",
+            source_path="/app/data/transcripts/episodes/ep1/transcript.md",
+            chunk_index=0,
+            text="Growth loops and activation metrics are key strategies for product retention and growth.",
+            token_count=12,
+            embedding=await embed_text("Growth loops and activation metrics are key strategies for product retention and growth."),
+        )
+        c2 = TranscriptChunk(
+            id="c2",
+            episode_id="ep2",
+            episode_title="Product Onboarding & Activation",
+            source_path="/app/data/transcripts/episodes/ep2/transcript.md",
+            chunk_index=0,
+            text="Make a one-pager on activation strategy to align cross-functional teams.",
+            token_count=12,
+            embedding=await embed_text("Make a one-pager on activation strategy to align cross-functional teams."),
+        )
+        session.add_all([c1, c2])
+        await session.commit()
+
     yield engine
     await engine.dispose()
 
