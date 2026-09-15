@@ -167,7 +167,7 @@ async def _handle_kb_metadata_query(
             TranscriptChunk.episode_id,
             TranscriptChunk.episode_title,
         )
-        .distinct(TranscriptChunk.episode_id)
+        .group_by(TranscriptChunk.episode_id, TranscriptChunk.episode_title)
         .order_by(TranscriptChunk.episode_title)
     )
     episodes = result.all()  # list of (episode_id, episode_title) tuples
