@@ -1,132 +1,149 @@
 # The Lenny Growth Assistant
 
-A conversational assistant grounded in [Lenny's Podcast](https://www.lennyspodcast.com/) transcripts.
-Ask product/growth questions, get cited answers, and turn them into a Ship-30/30-style essay or a
-shareable one-page doc — all rendered in an in-app Artifact Viewer.
+A full-stack, AI-powered conversational assistant grounded strictly in [Lenny's Podcast](https://www.lennyspodcast.com/) transcripts.
+Ask complex product/growth questions, get grounded answers with inline episode citations, generate Ship 30 for 30–style essays, and create Markdown or HTML/CSS artifacts rendered in an in-app side-by-side Artifact Viewer.
 
-Read `PRD.md` for the discovery brief, `docs/architecture.md` for system design, and `docs/design.md`
-for UI/UX rationale.
+Read [`PRD.md`](./PRD.md) for the product brief & discovery scope, [`docs/architecture.md`](./docs/architecture.md) for system design, [`docs/design.md`](./docs/design.md) for UI/UX rationale, and [`docs/manual_test_plan.md`](./docs/manual_test_plan.md) for UI testing steps.
 
-## Quickstart (Docker, recommended)
+---
+
+## 🚀 Quickstart (Docker, Recommended)
 
 **Prerequisites:**
 - Docker + Docker Compose
-- [Ollama](https://ollama.com/) installed and running **on your host machine** (not in Docker) —
-  this is the default, mandatory-for-demo local model path
-- ~5GB free disk space for the model
+- [Ollama](https://ollama.com/) installed and running **on your host machine** (default local model provider)
+- ~5GB free disk space for local model execution
 
 ```bash
-# 1. Pull the local model (one-time)
+# 1. Pull the local model (one-time setup)
 ollama pull llama3.1:8b
-ollama serve   # if not already running as a background service
+ollama serve   # start host Ollama service if not already running
 
-# 2. Fetch a working set of transcripts (subset of the full archive, for a fast demo)
-./scripts/fetch_transcripts.sh 40
-
-# 3. Configure environment
+# 2. Configure environment
 cp .env.example .env
-# defaults already point LLM_PROVIDER=ollama — no further edits needed to run locally
+# Default setting points LLM_PROVIDER=ollama — no further edits required for local demo
 
-# 4. Start everything
-docker compose up --build
+# 3. Start PostgreSQL database, FastAPI backend, and React frontend
+docker compose up -d --build
 
-# 5. In a separate terminal, ingest the transcripts into the knowledge base
+# 4. Ingest podcast transcripts into PostgreSQL knowledge base (303 episodes / 11,012 chunks)
 docker compose exec backend python -m app.ingestion.run_ingestion
 ```
 
 Then open:
-- Frontend: http://localhost:5173
-- API docs (Swagger): http://localhost:8000/docs
-- Health check: http://localhost:8000/health
+- **Frontend UI:** http://localhost:5173
+- **API Documentation (Swagger):** http://localhost:8000/docs
+- **Health Check Endpoint:** http://localhost:8000/health
 
-## Switching to the cloud model (Anthropic)
+---
+
+## 🔄 Switching to Cloud Provider (Anthropic)
 
 Edit `.env`:
-```
+```env
 LLM_PROVIDER=anthropic
 ANTHROPIC_API_KEY=sk-ant-...
 ```
-Then restart: `docker compose up -d --build backend`. No code changes required — see
-`app/agent/providers/factory.py`.
+Then restart the backend container: `docker compose up -d --build backend`.  
+No code changes are required — provider switching is handled via configuration (`app/agent/providers/factory.py`).
 
-## Running without Docker (local dev)
+---
 
-**Backend:**
+## 💻 Running Without Docker (Local Dev)
+
+**1. Backend:**
 ```bash
 cd backend
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-# Point DATABASE_URL at a local Postgres, or run one via:
-#   docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=lenny_assistant postgres:16-alpine
-cp ../.env.example .env   # edit DATABASE_URL to localhost
+
+# Start a local Postgres container or instance:
+docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=lenny_assistant postgres:16-alpine
+
+cp ../.env.example .env   # ensure DATABASE_URL points to localhost:5432
 uvicorn app.main:app --reload
 ```
 
-**Ingestion:**
+**2. Ingestion:**
 ```bash
 cd backend
 python -m app.ingestion.run_ingestion
 ```
 
-**Frontend:**
+**3. Frontend:**
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
 
-## Running tests
+---
+
+## 🧪 Running Automated Tests
+
+Run the full automated test suite using `pytest`:
 
 ```bash
+# Running tests inside Docker container:
+docker compose exec backend pytest -v
+
+# Or running locally inside backend virtual environment:
 cd backend
-pip install -r requirements.txt
 pytest -v
 ```
 
-Tests cover: chunking correctness, HTML artifact sanitization (XSS vectors), Ship 30/30 essay prompt
-structure, grounded-chat prompt/citation building, LLM provider routing (including the missing-API-key
-error path), retrieval embedding math, and a full API integration suite (session isolation, chat
-persistence, artifact generation) run against an in-memory SQLite DB with a fake LLM provider — no
-network or real Ollama instance required to run `pytest`.
+The **33 automated unit and integration tests** cover:
+- Token chunking logic and overlap guarantees
+- HTML artifact sanitization against XSS vectors (`bleach`)
+- Ship 30 for 30 essay prompt generation & constraints
+- Grounded chat prompt construction & citation formatting
+- LLM provider factory routing & graceful failure paths
+- Hashed term-frequency embedding math & cosine similarity
+- API integration tests (session creation, history isolation, message persistence, health reporting) against an in-memory test database with a deterministic fake provider.
 
-See `docs/manual_test_plan.md` for the UI test checklist that isn't practical to automate.
+---
 
-## Environment variables
+## ⚙️ Environment Variables
 
-See `.env.example` — every variable is documented inline. The most important one is `LLM_PROVIDER`
-(`ollama` or `anthropic`), which is the single switch controlling which model answers requests.
+See [`.env.example`](./.env.example) for inline documentation. Primary controls:
+- `LLM_PROVIDER`: `ollama` (local) or `anthropic` (cloud).
+- `OLLAMA_BASE_URL`: Defaults to `http://host.docker.internal:11434` for Docker-to-host connectivity.
+- `RETRIEVAL_TOP_K`: Default `6` candidate chunks per retrieval turn.
+- `RETRIEVAL_MIN_SCORE`: Relevance threshold `0.20` below which queries return the canonical non-grounded fallback.
 
-## Troubleshooting
+---
 
-| Symptom | Likely cause | Fix |
+## 🔍 Troubleshooting
+
+| Symptom | Likely Cause | Resolution |
 |---|---|---|
-| `/health` shows `llm_provider_healthy: false` with Ollama | `ollama serve` isn't running, or the model isn't pulled | `ollama serve` + `ollama pull llama3.1:8b` |
-| Backend can't reach Ollama from inside Docker on Linux | `host.docker.internal` DNS not resolving | Confirm `extra_hosts: host-gateway` is present in `docker-compose.yml` (already included) |
-| `/health` shows `knowledge_base_chunks: 0` | Ingestion hasn't run yet | `docker compose exec backend python -m app.ingestion.run_ingestion` |
-| Ingestion fails with "Transcripts directory does not exist" | `fetch_transcripts.sh` wasn't run | `./scripts/fetch_transcripts.sh 40` |
-| Chat responses are slow (10-20s) | Expected on CPU-only local Ollama inference | Switch to a smaller model or `LLM_PROVIDER=anthropic` for faster cloud responses |
-| `422` on `/api/chat` | Missing/invalid `session_id` | Call `POST /api/sessions` first, use the returned `session_id` |
-| CORS errors in browser console | Frontend origin not in `CORS_ALLOW_ORIGINS` | Add your origin to `.env`'s `CORS_ALLOW_ORIGINS` |
+| `/health` shows `llm_provider_healthy: false` with Ollama | `ollama serve` isn't running on host, or model isn't pulled | Run `ollama serve` and `ollama pull llama3.1:8b` |
+| Backend can't reach Ollama from inside Docker on Linux | `host.docker.internal` DNS not resolving | Confirm `extra_hosts: host-gateway` is present in `docker-compose.yml` (included by default) |
+| `/health` shows `knowledge_base_chunks: 0` | Transcript ingestion hasn't run yet | Run `docker compose exec backend python -m app.ingestion.run_ingestion` |
+| "Tell me all transcripts" lists only a few episodes | Direct semantic search window limitation | Resolved by KB Metadata Router in `orchestrator.py` which queries distinct episodes directly from DB |
+| `422 Unprocessable Entity` on `/api/chat` | Missing or invalid `session_id` | Call `POST /api/sessions` first to get a valid `session_id` |
 
-## Repo structure
+---
+
+## 📂 Repository Structure
 
 ```
 backend/
   app/
-    api/          FastAPI routes + Pydantic schemas
-    agent/        LLM provider abstraction, retrieval, orchestration
-    db/           SQLAlchemy models + session management
-    ingestion/    Transcript loading, chunking, embedding, CLI
-    skills/       Grounded chat, Ship 30/30 essay, artifact sanitizer
-  tests/          Unit + integration tests
+    api/          FastAPI endpoints, Pydantic schemas, exception handlers
+    agent/        LLM provider factory, retrieval engine, orchestrator
+    db/           SQLAlchemy models (ChatSession, ChatMessage, TranscriptChunk)
+    ingestion/    Recursive transcript loader, tiktoken chunker, CLI runner
+    skills/       Grounded chat prompt, Ship 30/30 essay skill, artifact sanitizer
+  tests/          Automated unit & integration test suite (33 tests)
 frontend/
   src/
-    components/   Message, ArtifactViewer
-    lib/          API client
-docs/              architecture.md, design.md, manual_test_plan.md
-agent_transcripts/ Coding-agent session logs (see its README)
-scripts/           fetch_transcripts.sh
-PRD.md             Discovery brief
-docker-compose.yml One-command startup
-.env.example       All configurable environment variables
+    components/   Message, CitationBadge, ArtifactViewer
+    lib/          API client hooks
+docs/             architecture.md, design.md, manual_test_plan.md
+agent_transcripts/ Coding-agent session logs (see index README)
+scripts/          fetch_transcripts.sh
+PRD.md            Discovery brief & product requirements
+docker-compose.yml Reproducible one-command multi-container setup
+.env.example      Environment variable template
 ```
